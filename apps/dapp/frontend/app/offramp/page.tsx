@@ -27,8 +27,12 @@ import {
     AlertCircle,
 } from "lucide-react";
 
-import { BANKS, type LPNode, LP_NODES } from "@/lib/settlement-data";
+import { type LPNode, LP_NODES } from "@/lib/settlement-data";
 import { getExplorerTxUrl } from "@/utils/explorer";
+import { BankCombobox } from "@/components/offramp/BankCombobox";
+import { AccountNameField } from "@/components/offramp/AccountNameField";
+import { SuggestedBankChips } from "@/components/offramp/SuggestedBankChips";
+import { useBankResolver } from "@/hooks/useBankResolver";
 
 const SEND_ASSETS = [
     { symbol: "USDC", name: "USD Coin", image: "/usdc.png" },
@@ -63,7 +67,7 @@ function jitterOffset(base: number): number {
 
 function buildQuotes(
     amount: number,
-    bank: typeof BANKS[0],
+    bankCode: string,
     currency: typeof RECEIVE_CURRENCIES[0]
 ): QuoteResult[] {
     const results: QuoteResult[] = LP_NODES.map((node) => {
@@ -72,7 +76,7 @@ function buildQuotes(
         const nodeFee = amount * (node.fee / 100);
         const netAmount = amount - nodeFee;
         const receiveAmount = netAmount * effectiveRate;
-        const isSameBank = node.bank === bank.code;
+        const isSameBank = node.bank === bankCode;
         const estimatedTime = isSameBank
             ? `~${Math.max(3, node.avgSettleTime - 8)}s`
             : `${Math.ceil(node.avgSettleTime / 60) || 1}-${Math.ceil(node.avgSettleTime / 60) + 4} min`;
@@ -117,6 +121,7 @@ export default function OfframpPage() {
         handleSubmit,
         watch,
         control,
+        setValue,
         formState: { errors, isValid, isDirty },
         trigger,
     } = useForm<FormValues>({
@@ -135,8 +140,10 @@ export default function OfframpPage() {
 
     const [sendAsset, setSendAsset] = useState(SEND_ASSETS[0]);
     const [receiveCurrency, setReceiveCurrency] = useState(RECEIVE_CURRENCIES[0]);
-    const selectedBank = BANKS.find(b => b.code === selectedBankCode) || null;
-    const [showBankDropdown, setShowBankDropdown] = useState(false);
+    const [manualName, setManualName] = useState("");
+
+    const { resolveState, accountInfo } = useBankResolver(accountNumber, selectedBankCode);
+    const resolvedName = resolveState === "success" ? (accountInfo?.account_name ?? null) : null;
     const [showSendDropdown, setShowSendDropdown] = useState(false);
     const [showReceiveDropdown, setShowReceiveDropdown] = useState(false);
 
@@ -158,7 +165,7 @@ export default function OfframpPage() {
     const allFieldsFilled = isValid;
 
     const runQuoteScan = useCallback(
-        (amount: number, bank: typeof BANKS[0], currency: typeof RECEIVE_CURRENCIES[0]) => {
+        (amount: number, bankCode: string, currency: typeof RECEIVE_CURRENCIES[0]) => {
             setQuotePhase("scanning");
             setScannedCount(0);
             setQuotes([]);
@@ -174,7 +181,7 @@ export default function OfframpPage() {
                     setTimeout(() => {
                         setQuotePhase("ranking");
                         setTimeout(() => {
-                            const results = buildQuotes(amount, bank, currency);
+                            const results = buildQuotes(amount, bankCode, currency);
                             setQuotes(results);
                             setSelectedQuote(results[0]);
                             setQuotePhase("done");
@@ -187,8 +194,8 @@ export default function OfframpPage() {
     );
 
     const silentRefresh = useCallback(
-        (amount: number, bank: typeof BANKS[0], currency: typeof RECEIVE_CURRENCIES[0]) => {
-            const results = buildQuotes(amount, bank, currency);
+        (amount: number, bankCode: string, currency: typeof RECEIVE_CURRENCIES[0]) => {
+            const results = buildQuotes(amount, bankCode, currency);
             setQuotes(results);
             setSelectedQuote((prev) => {
                 if (!prev) return results[0];
@@ -214,10 +221,10 @@ export default function OfframpPage() {
 
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
-            runQuoteScan(numericAmount, selectedBank!, receiveCurrency);
+            runQuoteScan(numericAmount, selectedBankCode, receiveCurrency);
 
             refreshRef.current = setInterval(() => {
-                silentRefresh(numericAmount, selectedBank!, receiveCurrency);
+                silentRefresh(numericAmount, selectedBankCode, receiveCurrency);
             }, 8000);
         }, 500);
 
@@ -225,7 +232,7 @@ export default function OfframpPage() {
             if (debounceRef.current) clearTimeout(debounceRef.current);
             if (refreshRef.current) clearInterval(refreshRef.current);
         };
-    }, [allFieldsFilled, numericAmount, selectedBank, receiveCurrency, runQuoteScan, silentRefresh]);
+    }, [allFieldsFilled, numericAmount, selectedBankCode, receiveCurrency, runQuoteScan, silentRefresh]);
 
     if (!isConnected) return null;
 
@@ -252,7 +259,7 @@ export default function OfframpPage() {
                 title: "Withdrawal Submitted",
                 message: `Withdrew ${numericAmount.toLocaleString("en-US", {
                     maximumFractionDigits: 2,
-                })} ${sendAsset.symbol} to ${selectedBank?.name} ending in ${data.accountNumber.slice(-4)}.`,
+                })} ${sendAsset.symbol} to ${accountInfo?.bank_name ?? selectedBankCode} ending in ${data.accountNumber.slice(-4)}.`,
                 actionUrl: getExplorerTxUrl(`mock-settlement-${selectedQuote.node.id}`),
                 actionLabel: "View Transaction",
             },
@@ -461,63 +468,7 @@ export default function OfframpPage() {
 
                     {/* Bank Details Section */}
                     <div className="border-t border-border p-4 sm:p-5 space-y-4">
-                        <div className="relative">
-                            <label className="text-xs text-muted-foreground font-medium mb-2 block">
-                                Select bank
-                            </label>
-                            <Controller
-                                name="bankCode"
-                                control={control}
-                                render={({ field: { onChange, value } }) => {
-                                    const currentBank = BANKS.find((b) => b.code === value);
-                                    return (
-                                        <>
-                                            <button
-                                                onClick={() => setShowBankDropdown(!showBankDropdown)}
-                                                className={cn(
-                                                    "w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border hover:border-foreground/20 transition-colors bg-white min-h-[52px]",
-                                                    errors.bankCode && "border-red-500 focus:border-red-500"
-                                                )}
-                                            >
-                                                <span
-                                                    className={
-                                                        currentBank
-                                                            ? "text-sm font-medium text-foreground"
-                                                            : "text-sm text-muted-foreground"
-                                                    }
-                                                >
-                                                    {currentBank ? currentBank.name : "Choose your bank"}
-                                                </span>
-                                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                            </button>
-                                            {showBankDropdown && (
-                                                <div className="absolute left-0 right-0 top-full mt-1 rounded-xl border border-border bg-white shadow-lg py-1 z-20 max-h-56 overflow-y-auto">
-                                                    {BANKS.map((bank) => (
-                                                        <button
-                                                            key={bank.code}
-                                                            onClick={() => {
-                                                                onChange(bank.code);
-                                                                setShowBankDropdown(false);
-                                                                trigger("bankCode");
-                                                            }}
-                                                            className="w-full text-left px-4 py-3 text-sm hover:bg-secondary/50 transition-colors min-h-[48px]"
-                                                        >
-                                                            {bank.name}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {errors.bankCode && (
-                                                <span className="text-xs text-red-500 font-medium mt-1 block">
-                                                    {errors.bankCode.message}
-                                                </span>
-                                            )}
-                                        </>
-                                    );
-                                }}
-                            />
-                        </div>
-
+                        {/* Step 1 — Account number */}
                         <div>
                             <label className="text-xs text-muted-foreground font-medium mb-2 block">
                                 Account number
@@ -531,11 +482,15 @@ export default function OfframpPage() {
                                             type="text"
                                             inputMode="numeric"
                                             maxLength={10}
-                                            placeholder="Enter 10-digit account number"
+                                            placeholder="Enter 10-digit NUBAN"
                                             value={value}
                                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                                 const val = e.target.value.replace(/\D/g, "");
                                                 onChange(val);
+                                                // Clear bank selection when account number changes
+                                                if (selectedBankCode) {
+                                                    setValue("bankCode", "", { shouldDirty: true });
+                                                }
                                                 if (isDirty) trigger("accountNumber");
                                             }}
                                             onBlur={onBlur}
@@ -556,6 +511,64 @@ export default function OfframpPage() {
                                 )}
                             />
                         </div>
+
+                        {/* Step 2 — Bank selection (chips + combobox) */}
+                        <AnimatePresence>
+                            {accountNumber?.length === 10 && (
+                                <motion.div
+                                    key="bank-picker"
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="space-y-3 overflow-hidden"
+                                >
+                                    {/* Popular bank quick-picks */}
+                                    <Controller
+                                        name="bankCode"
+                                        control={control}
+                                        render={({ field: { value } }) => (
+                                            <SuggestedBankChips
+                                                selectedCode={value}
+                                                onSelect={(code) => {
+                                                    setValue("bankCode", code, { shouldDirty: true, shouldValidate: true });
+                                                    trigger("bankCode");
+                                                }}
+                                            />
+                                        )}
+                                    />
+
+                                    {/* Full searchable combobox */}
+                                    <div>
+                                        <p className="text-[11px] text-muted-foreground mb-1.5">
+                                            Don&apos;t see your bank?
+                                        </p>
+                                        <Controller
+                                            name="bankCode"
+                                            control={control}
+                                            render={({ field: { onChange, value } }) => (
+                                                <BankCombobox
+                                                    value={value}
+                                                    onChange={(code) => {
+                                                        onChange(code);
+                                                        trigger("bankCode");
+                                                    }}
+                                                    error={errors.bankCode?.message}
+                                                />
+                                            )}
+                                        />
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Step 3 — Account name resolution */}
+                        <AccountNameField
+                            resolveState={resolveState}
+                            accountName={resolvedName}
+                            onManualName={setManualName}
+                            manualName={manualName}
+                        />
                     </div>
 
                     {/* Rate info */}
@@ -613,20 +626,24 @@ export default function OfframpPage() {
                     {/* CTA Button */}
                     <div className="p-4 sm:p-5 pt-0">
                         <button
-                            disabled={!isValid || quotePhase !== "done"}
+                            disabled={!isValid || quotePhase !== "done" || resolveState === "loading" || resolveState === "not_found"}
                             onClick={handleWithdraw}
                             className="w-full rounded-xl bg-foreground text-background py-4 text-sm font-medium transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             {!numericAmount
                                 ? "Enter an amount"
-                                : !selectedBank
+                                : !selectedBankCode
                                     ? "Select a bank"
                                     : (accountNumber?.length || 0) !== 10
                                         ? "Enter account number"
-                                        : quotePhase !== "done"
-                                            ? "Finding best rate..."
-                                            : showLargeWarning
-                                                ? "Yes, confirm withdrawal"
+                                        : resolveState === "loading"
+                                            ? "Verifying account..."
+                                            : resolveState === "not_found"
+                                                ? "Account not found"
+                                                : quotePhase !== "done"
+                                                    ? "Finding best rate..."
+                                                    : showLargeWarning
+                                                        ? "Yes, confirm withdrawal"
                                                 : `Withdraw ${displayReceive.toLocaleString("en-US", { minimumFractionDigits: 2 })} ${receiveCurrency.symbol}`}
                         </button>
                     </div>
