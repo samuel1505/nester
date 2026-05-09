@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle,
@@ -179,15 +179,25 @@ export function DepositModal({ open, onClose, vault }: DepositModalProps) {
   const [state, setState] = useState<ActionState>("input");
   const [errorMsg, setErrorMsg] = useState("");
   const [receipt, setReceipt] = useState<TransactionReceipt | null>(null);
-  const [selectedAsset, setSelectedAsset] = useState<"USDC" | "XLM">(
-    (vault?.supportedAssets?.[0] as "USDC" | "XLM") ?? "USDC"
-  );
+  const [userAssetOverride, setUserAssetOverride] = useState<"USDC" | "XLM" | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<MarketStrategy | null>(
     vault?.strategies?.[0] ?? null
   );
 
   const supportedAssets = (vault?.supportedAssets ?? ["USDC"]) as ("USDC" | "XLM")[];
   const strategies = vault?.strategies ?? [];
+
+  // Always derive the token from vault; only honour user's pick if vault supports it
+  const vaultDefaultAsset = (vault?.supportedAssets?.[0] as "USDC" | "XLM") ?? "USDC";
+  const selectedAsset =
+    userAssetOverride && vault?.supportedAssets?.includes(userAssetOverride)
+      ? userAssetOverride
+      : vaultDefaultAsset;
+
+  useEffect(() => {
+    setUserAssetOverride(null);
+    setSelectedStrategy(vault?.strategies?.[0] ?? null);
+  }, [vault?.id]);
 
 
   const amount = Number(amountInput) || 0;
@@ -367,7 +377,7 @@ export function DepositModal({ open, onClose, vault }: DepositModalProps) {
                             key={a}
                             type="button"
                             onClick={() => {
-                              setSelectedAsset(a);
+                              setUserAssetOverride(a);
                               setAmountInput("");
                               if (state === "error") setState("input");
                             }}
