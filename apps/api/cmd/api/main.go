@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -686,11 +687,17 @@ func extractEventAmount(event indexedEvent) (decimal.Decimal, bool) {
 		case int64:
 			return decimal.NewFromInt(v), true
 		case float64:
-			value, err := decimal.NewFromString(fmt.Sprintf("%v", v))
-			if err != nil {
+			// float64 only represents integers exactly up to 2^53. Soroban
+			// amounts are stroops and routinely exceed that for large vault
+			// deposits, so a float64 amount beyond the safe range has already
+			// lost precision and would silently corrupt the stored balance.
+			// Reject it (surfacing "amount not extracted") instead of writing a
+			// wrong value. Amounts normally arrive as json.Number (UseNumber),
+			// so this only guards stray float64 inputs.
+			if v != math.Trunc(v) || math.Abs(v) > float64(1<<53) {
 				return decimal.Zero, false
 			}
-			return value, true
+			return decimal.NewFromInt(int64(v)), true
 		}
 	}
 
