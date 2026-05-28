@@ -26,6 +26,7 @@ import (
 	"github.com/suncrestlabs/nester/apps/api/internal/repository/postgres"
 	"github.com/suncrestlabs/nester/apps/api/internal/service"
 	performancesvc "github.com/suncrestlabs/nester/apps/api/internal/service/performance"
+	"github.com/suncrestlabs/nester/apps/api/internal/services"
 	stellarpkg "github.com/suncrestlabs/nester/apps/api/internal/stellar"
 	"github.com/suncrestlabs/nester/apps/api/internal/ws"
 	logpkg "github.com/suncrestlabs/nester/apps/api/pkg/logger"
@@ -154,7 +155,7 @@ func run() error {
 	go wsHub.Run(wsCtx)
 
 	performanceRepository := postgres.NewPerformanceRepository(db)
-	vaultRepository := postgres.NewVaultRepository(db)
+	vaultRepository = postgres.NewVaultRepository(db)
 	performanceService := performancesvc.NewService(performanceRepository, vaultRepository)
 	performanceHandler := handler.NewPerformanceHandler(performanceService)
 

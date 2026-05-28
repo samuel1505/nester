@@ -275,7 +275,9 @@ class VaultContextFetcher:
             }
 
             primary_driver = (
-                max(weighted_scores, key=lambda k: weighted_scores[k]) if weighted_scores else "unknown"
+                max(weighted_scores, key=lambda k: weighted_scores[k])
+                if weighted_scores
+                else "unknown"
             )
             primary_driver_name = {
                 "concentration_risk": "Concentration Risk",

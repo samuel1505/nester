@@ -62,3 +62,4 @@ export default function AllocationPieChart({ data }: AllocationPieChartProps) {
     </div>
   );
 }
+export { AllocationPieChart };
