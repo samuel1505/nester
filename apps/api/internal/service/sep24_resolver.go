@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,13 +23,11 @@ type Sep24Resolver struct {
 
 func NewSep24Resolver(anchorURL, jwtToken string) *Sep24Resolver {
 	return &Sep24Resolver{
-		anchorURL:  anchorURL,
-		jwtToken:   jwtToken,
+		anchorURL: anchorURL,
+		jwtToken:  jwtToken,
+		// Use the default transport which enforces TLS certificate validation.
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
 		},
 	}
 }

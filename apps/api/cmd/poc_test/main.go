@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,15 +36,9 @@ func main() {
 	// for some anchors, but we will do it anyway if needed. For testanchor.stellar.org,
 	// we can usually just do SEP-10 without funding first.
 
-	customClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
 	log.Println("2. Requesting SEP-10 challenge...")
 	challengeURL := fmt.Sprintf("%s/auth?account=%s", AnchorURL, kp.Address())
-	resp, err := customClient.Get(challengeURL)
+	resp, err := http.DefaultClient.Get(challengeURL)
 	if err != nil {
 		log.Fatalf("Failed to get challenge: %v", err)
 	}
@@ -95,7 +88,7 @@ func main() {
 	}
 	authReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	authResp, err := customClient.Do(authReq)
+	authResp, err := http.DefaultClient.Do(authReq)
 	if err != nil {
 		log.Fatalf("Failed to submit auth: %v", err)
 	}
